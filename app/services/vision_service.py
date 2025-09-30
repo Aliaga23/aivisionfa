@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import os
+# Configure OpenCV for headless server environment (Railway)
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
+os.environ['OPENCV_IO_ENABLE_JASPER'] = '0'
+os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'
+
 import cv2
+# Disable GUI features for headless deployment
+if hasattr(cv2, 'setNumThreads'):
+    cv2.setNumThreads(1)  # Limit threads for server environment
 import numpy as np
 import threading
 import time
@@ -18,7 +27,8 @@ from ultralytics import YOLO
 
 class CarOrientationPredictor:
     def __init__(self, model_path: str = 'car_orientation_model.pth'):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Force CPU for Railway deployment (no CUDA available)
+        self.device = torch.device('cpu')
         self.model = models.resnet50(pretrained=False)
         num_features = self.model.fc.in_features
         self.model.fc = nn.Linear(num_features, 2)
@@ -245,8 +255,10 @@ class VisionService:
         if self.detector is None:
             return {"status": "error", "message": "Detector no inicializado"}
         if source_type == 'webcam':
-            self.camera = cv2.VideoCapture(0)
-            self.video_source = 'Webcam'
+            # Railway doesn't have webcam access, return error
+            return {"status": "error", "message": "Webcam no disponible en Railway"}
+            # self.camera = cv2.VideoCapture(0)
+            # self.video_source = 'Webcam'
         else:
             if not video_path:
                 return {"status": "error", "message": "Falta nombre de archivo"}
