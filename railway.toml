@@ -1,2 +1,5 @@
-[phases.setup]
-python = "3.12.6"
+[build]
+builder = "nixpacks"
+
+[build.nixpacksConfig]
+python = "3.12"
