@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.dylib
+
+# Environments
+.venv/
+venv/
+env/
+.conda/
+.pyenv/
+
+# Packaging
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+uvicorn.log
+
+# App temp/output
+uploads/
+tmp/
+temp/
+
+# Optional: large datasets and training artifacts
+# Uncomment if you don't want to commit datasets/weights (be careful: the app requires parking_zones4/weights/best.pt)
+condo2/
+condo3/
+condo4/
+condo5/
+dataset_etiquetado/
+# parking_zone_training/
+parking_zone_test/
+.env
