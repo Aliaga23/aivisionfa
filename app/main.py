@@ -1,8 +1,12 @@
 import os
-# Force CPU usage for all ML frameworks before any imports
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
-os.environ['TORCH_NUM_THREADS'] = '1'
-os.environ['OMP_NUM_THREADS'] = '1'
+# Enable GPU acceleration for maximum performance
+# Remove CPU limitations to unleash GPU power
+if 'CUDA_VISIBLE_DEVICES' in os.environ:
+    del os.environ['CUDA_VISIBLE_DEVICES']
+if 'TORCH_NUM_THREADS' in os.environ:
+    del os.environ['TORCH_NUM_THREADS']
+if 'OMP_NUM_THREADS' in os.environ:
+    del os.environ['OMP_NUM_THREADS']
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
