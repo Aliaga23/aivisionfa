@@ -61,7 +61,12 @@ async def vision_ws(ws: WebSocket):
             "type": "hello",
             "image_format": settings.image_format,
         })
+        
         last_stats = 0.0
+        last_frame = 0.0
+        frame_interval = 0.066  # ~15 FPS para frames
+        stats_interval = 0.5    # 2 Hz para stats
+        
         while True:
             # Try to read control message without blocking
             try:
@@ -70,6 +75,7 @@ async def vision_ws(ws: WebSocket):
                     msg = json.loads(text)
                 except Exception:
                     msg = {"action": "noop"}
+                    
                 action = msg.get("action")
                 if action == "start":
                     source_type = msg.get("source_type", "webcam")
@@ -91,16 +97,22 @@ async def vision_ws(ws: WebSocket):
             except asyncio.TimeoutError:
                 pass
 
-            # Push latest frame if available
-            frame_bytes = vision_service.get_encoded_frame()
-            if frame_bytes is not None:
-                await ws.send_bytes(frame_bytes)
-            # Throttle stats to ~5 Hz
             now = asyncio.get_event_loop().time()
-            if now - last_stats > 0.2:
+            
+            # Enviar frames con throttling
+            if now - last_frame >= frame_interval:
+                frame_bytes = vision_service.get_encoded_frame()
+                if frame_bytes is not None:
+                    await ws.send_bytes(frame_bytes)
+                    last_frame = now
+            
+            # Enviar stats con throttling
+            if now - last_stats >= stats_interval:
                 await ws.send_json({"type": "stats", **vision_service.get_stats()})
                 last_stats = now
-            await asyncio.sleep(0.02)
+            
+            await asyncio.sleep(0.05)  # 20 FPS loop principal
+            
     except WebSocketDisconnect:
         return
     except Exception as e:

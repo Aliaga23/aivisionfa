@@ -59,3 +59,6 @@ dataset_etiquetado/
 # parking_zone_training/
 parking_zone_test/
 .env
+frontend/node_modules/
+frontend/build/
+frontend/

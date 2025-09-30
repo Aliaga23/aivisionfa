@@ -1,3 +1,9 @@
+import os
+# Force CPU usage for all ML frameworks before any imports
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ['TORCH_NUM_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS'] = '1'
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -64,18 +70,24 @@ async def startup_event():
     # Initialize vision models
     try:
         from .services.vision_service import vision_service
-        # Enforce using only parking_zones4/weights/best.pt (no defaults)
-        expected_zone_path = (
-            Path(__file__).resolve().parents[1]
-            / "parking_zone_training" / "parking_zones4" / "weights" / "best.pt"
-        )
+        # Get the project root (parent of 'app' directory)
+        # __file__ is app/main.py, so parent is 'app', parent.parent is project root
+        project_root = Path(__file__).resolve().parent.parent
+        expected_zone_path = project_root / "models" / "best.pt"
+        
         if not expected_zone_path.exists():
             raise FileNotFoundError(f"Required zone model not found: {expected_zone_path}")
 
-        vehicle_model_path = settings.vehicle_model_path
-        orientation_model_path = settings.orientation_model_path
+        # Use absolute paths for all models
+        vehicle_model_path = str(project_root / "models" / "yolov8n.pt")
+        orientation_model_path = str(project_root / "models" / "car_orientation_model.pth")
+        
+        print(f"[startup] Loading models from:")
+        print(f"  - Zone model: {expected_zone_path}")
+        print(f"  - Vehicle model: {vehicle_model_path}")
+        print(f"  - Orientation model: {orientation_model_path}")
         vision_service.init_models(str(expected_zone_path), vehicle_model_path, orientation_model_path)
-        print("[startup] Vision models initialized")
+        print(f"[startup] Vision models initialized from {expected_zone_path}")
     except Exception as e:
         print(f"[startup] Vision models init failed: {e}")
     

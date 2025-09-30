@@ -5,6 +5,9 @@ import os
 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '0'
 os.environ['OPENCV_IO_ENABLE_JASPER'] = '0'
 os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'
+# Force CPU usage for ML frameworks
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+os.environ['TORCH_NUM_THREADS'] = '1'
 
 import cv2
 # Disable GUI features for headless deployment
@@ -26,7 +29,7 @@ from ultralytics import YOLO
 
 
 class CarOrientationPredictor:
-    def __init__(self, model_path: str = 'car_orientation_model.pth'):
+    def __init__(self, model_path: str = '../models/car_orientation_model.pth'):
         # Force CPU for Railway deployment (no CUDA available)
         self.device = torch.device('cpu')
         self.model = models.resnet50(pretrained=False)
@@ -37,10 +40,13 @@ class CarOrientationPredictor:
             if model_path and Path(model_path).exists():
                 self.model.load_state_dict(torch.load(model_path, map_location=self.device))
                 self.enabled = True
+                print(f"[VisionService] Orientation model loaded successfully from: {model_path}")
             else:
-                print("[VisionService] Orientation model not found; orientation disabled")
+                print(f"[VisionService] Orientation model not found at: {model_path}; orientation disabled")
+                print(f"[VisionService] Current working directory: {Path.cwd()}")
+                print(f"[VisionService] Model path exists: {Path(model_path).exists()}")
         except Exception as e:
-            print(f"[VisionService] Warning loading orientation model: {e}")
+            print(f"[VisionService] Error loading orientation model from {model_path}: {e}")
         self.model = self.model.to(self.device)
         self.model.eval()
         self.transform = transforms.Compose([
@@ -68,8 +74,11 @@ class CarOrientationPredictor:
 
 class ParkingSystemComplete:
     def __init__(self, zone_model_path: str, vehicle_model_path: str, orientation_model_path: str):
+        # Force CPU for all models - no GPU needed
         self.zone_model = YOLO(zone_model_path)
+        self.zone_model.to('cpu')
         self.vehicle_model = YOLO(vehicle_model_path)
+        self.vehicle_model.to('cpu')
         self.orientation_predictor = CarOrientationPredictor(orientation_model_path)
         self.vehicle_classes = [2, 3, 5, 7]
         self.vehicle_names = {2: 'auto', 3: 'moto', 5: 'bus', 7: 'camion'}
@@ -93,7 +102,7 @@ class ParkingSystemComplete:
         frame_result = frame.copy()
         h, w = frame.shape[:2]
         zones = []
-        zone_results = self.zone_model(frame, conf=zone_conf, verbose=False)
+        zone_results = self.zone_model(frame, conf=zone_conf, verbose=False, device='cpu')
         for result in zone_results:
             if result.masks is not None:
                 masks = result.masks.data.cpu().numpy()
@@ -113,7 +122,7 @@ class ParkingSystemComplete:
                         'vehicles': []
                     })
 
-        vehicle_results = self.vehicle_model(frame, conf=vehicle_conf, verbose=False)
+        vehicle_results = self.vehicle_model(frame, conf=vehicle_conf, verbose=False, device='cpu')
         vehicles = []
         vehicle_counter = 0
         for result in vehicle_results:
@@ -230,13 +239,22 @@ class VisionService:
 
     def process_video_stream(self):
         frame_count = 0
+        skip_frames = 2  # Procesar 1 de cada 3 frames
+        
         while self.processing_active and self.camera is not None:
             ret, frame = self.camera.read()
             if not ret:
                 self.processing_active = False
                 break
+            
             frame_count += 1
+            
+            # Skip frames para mejorar rendimiento
+            if frame_count % skip_frames != 0:
+                continue
+                
             result_frame, zones, stats = self.detector.process_frame(frame, frame_count)
+            
             with self.lock:
                 self.stats['zones_total'] = len(zones)
                 self.stats['zones_occupied'] = sum(1 for z in zones if z['vehicles'])
@@ -248,17 +266,20 @@ class VisionService:
                 self.stats['avg_speed'] = 0
                 self.stats['max_speed'] = 0
                 self.output_frame = result_frame.copy()
+            
+            # Pequeña pausa para no saturar CPU
+            time.sleep(0.033)  # ~30 FPS
 
     def start(self, source_type: str = 'webcam', video_path: Optional[str] = None) -> Dict[str, Any]:
         if self.processing_active:
             return {"status": "already_running"}
         if self.detector is None:
             return {"status": "error", "message": "Detector no inicializado"}
-        if source_type == 'webcam':
-            # Railway doesn't have webcam access, return error
-            return {"status": "error", "message": "Webcam no disponible en Railway"}
-            # self.camera = cv2.VideoCapture(0)
-            # self.video_source = 'Webcam'
+        if source_type == 'webcam' or source_type == 'camera':
+            # Para desarrollo local, habilitar cámara web
+            camera_index = int(video_path) if video_path else 0
+            self.camera = cv2.VideoCapture(camera_index)
+            self.video_source = f'Webcam {camera_index}'
         else:
             if not video_path:
                 return {"status": "error", "message": "Falta nombre de archivo"}
@@ -351,14 +372,23 @@ class VisionService:
             if self.output_frame is None:
                 return None
             frame_local = self.output_frame.copy()
-        # Encode according to configured format
+        
+        # Reducir resolución para transmisión más rápida
+        height, width = frame_local.shape[:2]
+        if width > 640:
+            scale = 640 / width
+            new_width = 640
+            new_height = int(height * scale)
+            frame_local = cv2.resize(frame_local, (new_width, new_height))
+        
+        # Encode con menor calidad para velocidad
         if self.image_format == 'webp':
-            ok, buffer = cv2.imencode('.webp', frame_local, [cv2.IMWRITE_WEBP_QUALITY, 80])
+            ok, buffer = cv2.imencode('.webp', frame_local, [cv2.IMWRITE_WEBP_QUALITY, 60])
             if not ok:
-                # Fallback to JPEG if OpenCV lacks WebP support
-                ok, buffer = cv2.imencode('.jpg', frame_local, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                ok, buffer = cv2.imencode('.jpg', frame_local, [cv2.IMWRITE_JPEG_QUALITY, 70])
         else:
-            ok, buffer = cv2.imencode('.jpg', frame_local, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            ok, buffer = cv2.imencode('.jpg', frame_local, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        
         if not ok:
             return None
         return buffer.tobytes()
