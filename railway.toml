@@ -1,5 +1,0 @@
-[build]
-builder = "nixpacks"
-
-[build.nixpacksConfig]
-python = "3.12"
